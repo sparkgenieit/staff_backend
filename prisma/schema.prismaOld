@@ -1,0 +1,357 @@
+// ───────────────────────────────────────────────────────────────────────────────
+// DATASOURCE & GENERATOR
+// ───────────────────────────────────────────────────────────────────────────────
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ───────────────────────────────────────────────────────────────────────────────
+enum Role {
+  RIDER
+  VENDOR
+  DRIVER
+  ADMIN
+  SUPPORT_AGENT
+  SUPER_ADMIN
+}
+
+enum messageStatus {
+  READ
+  UNREAD
+}
+
+enum AddressType {
+  HOME
+  OFFICE
+  OTHER
+  PICKUP
+  DROP
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// MODELS
+// ───────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String?
+  phone     String?
+   age      Int?          // ✅ NEW
+  gender    String?       // ✅ NEW
+  role      Role     @default(RIDER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownsVendor Vendor? @relation("UserOwnsVendor") // ✅ vendor creator
+
+  Driver       Driver[]      @relation("UserDrivers")
+  Feedback     Feedback[]
+  bookings     Booking[]     @relation("UserBookings")
+  trips        Trip[]        @relation("UserTrips")
+  addressBooks AddressBook[] @relation("UserAddressBooks")
+  invoices     Invoice[]
+}
+
+model Vendor {
+  id         Int      @id @default(autoincrement())
+  name       String
+  companyReg String   @unique
+  createdAt  DateTime @default(now())
+
+  userId Int?  @unique
+  vendor User? @relation("UserOwnsVendor", fields: [userId], references: [id])
+
+  drivers  Driver[]   @relation("VendorDrivers")
+  vehicles Vehicle[]
+  trips    Trip[]     @relation("VendorTrips")
+  earnings Earnings[] @relation("VendorEarnings")
+  Booking  Booking[]
+  Quote    Quote[]
+  invoices Invoice[]
+
+  @@map("vendors")
+}
+
+model Vehicle {
+  id                 Int       @id @default(autoincrement())
+  name               String
+  model              String
+  image              String
+  capacity           Int
+  registrationNumber String    @unique
+  price              Int       @default(0)
+  originalPrice      Int       @default(0)
+  status             String    @default("available")
+  comfortLevel       Int
+  lastServicedDate   DateTime?
+  vehicleTypeId      Int
+  createdBy          Role      @default(VENDOR) // either VENDOR or DRIVER
+
+  // Owner (Vendor or Driver)
+  vendorId      Int?
+  vendor        Vendor? @relation(fields: [vendorId], references: [id])
+  driverOwnerId Int?
+  driverOwner   Driver? @relation(fields: [driverOwnerId], references: [id])
+
+  vehicleType  VehicleType @relation(fields: [vehicleTypeId], references: [id])
+  priceId      Int        @default(10)
+  vehiclePrice Price       @relation(fields: [priceId], references: [id])
+  driver       Driver[]    @relation("VehicleToDriver")
+  trips        Trip[]      @relation("VehicleTrips")
+}
+
+model Price {
+  id        Int       @id @default(autoincrement())
+  priceType String //peakHour surge normal
+  price     Float
+  vehicles  Vehicle[]
+}
+
+// ✅ Updated Prisma Schema for Driver model with new UI fields
+model Driver {
+  id            Int      @id @default(autoincrement())
+  fullName      String
+  phone         String
+  email         String
+  licenseNumber String
+  licenseExpiry DateTime
+  isPartTime    Boolean  @default(false)
+  isAvailable   Boolean  @default(true)
+
+  assignedVehicleId Int?     @unique
+  assignedVehicle   Vehicle? @relation("VehicleToDriver", fields: [assignedVehicleId], references: [id]) // ✅ Backward link
+
+  vendorId Int?
+  vendor   Vendor? @relation("VendorDrivers", fields: [vendorId], references: [id])
+
+  userId Int?
+  user   User? @relation("UserDrivers", fields: [userId], references: [id])
+
+  trips    Trip[]
+  Feedback Feedback[]
+  Vehicle  Vehicle[]
+}
+
+model VehicleType {
+  id                 Int       @id @default(autoincrement())
+  name               String    @unique
+  estimatedRatePerKm Float     @default(10.0) // ✅ Add rate per km
+  baseFare           Float     @default(0.0) // ✅ Optional: add base fare
+  seatingCapacity    Int       @default(4)
+  vehicles           Vehicle[]
+  bookings           Booking[]
+}
+
+model City {
+  id           Int       @id @default(autoincrement())
+  name         String
+  state        String
+  lat          Float? // ✅ Optional for geocoding fallback
+  lng          Float?
+  stopBookings Booking[] @relation("BookingStopCities")
+
+  bookingsFrom Booking[] @relation("BookingFromCity")
+  bookingsTo   Booking[] @relation("BookingToCity")
+
+  // ✅ Distances (many-to-many directional)
+  fromDistances CityDistance[] @relation("FromCity")
+  toDistances   CityDistance[] @relation("ToCity")
+}
+
+model CityDistance {
+  id           Int    @id @default(autoincrement())
+  fromCityId   Int
+  toCityId     Int
+  distanceKm   Float
+  // ✅ Add names for display/debug only
+  fromCityName String
+  toCityName   String
+
+  fromCity City @relation("FromCity", fields: [fromCityId], references: [id])
+  toCity   City @relation("ToCity", fields: [toCityId], references: [id])
+
+  @@unique([fromCityId, toCityId]) // Ensure one direction stored
+}
+
+model TripType {
+  id       Int       @id @default(autoincrement())
+  label    String    @unique
+  slug     String    @unique
+  bookings Booking[]
+}
+
+model AddressBook {
+  id             Int         @id @default(autoincrement())
+  userId         Int
+  type           AddressType
+  address        String?
+  city           String?
+  pinCode        String?
+  createdAt      DateTime    @default(now())
+  user           User        @relation("UserAddressBooks", fields: [userId], references: [id])
+  pickupBookings Booking[]   @relation("BookingPickupAddress")
+  dropBookings   Booking[]   @relation("BookingDropAddress")
+
+  @@unique([userId, type, address])
+}
+
+model Booking {
+  id               Int               @id @default(autoincrement())
+  userId           Int
+  vehicleTypeId    Int
+  pickupAddressId  Int
+  dropAddressId    Int
+  pickupDateTime   DateTime
+  fromCityId       Int
+  toCityId         Int
+  tripTypeId       Int
+  fare             Float
+  numPersons       Int               @default(1) // ✅ Default added
+  numVehicles      Int               @default(1) // ✅ Default added
+  bookingType      String            @default("individual")
+  status           String            @default("PENDING")
+  createdAt        DateTime          @default(now())
+  vendorId         Int? // ✅ Added — vendor assigned after quote approval
+  vendor           Vendor?           @relation(fields: [vendorId], references: [id])
+  quotes           Quote[]
+  user             User              @relation("UserBookings", fields: [userId], references: [id])
+  vehicleType      VehicleType       @relation(fields: [vehicleTypeId], references: [id])
+  pickupAddress    AddressBook       @relation("BookingPickupAddress", fields: [pickupAddressId], references: [id])
+  dropAddress      AddressBook       @relation("BookingDropAddress", fields: [dropAddressId], references: [id])
+  fromCity         City              @relation("BookingFromCity", fields: [fromCityId], references: [id])
+  toCity           City              @relation("BookingToCity", fields: [toCityId], references: [id])
+  trips            Trip[]            @relation("BookingTrip")
+  TripType         TripType          @relation(fields: [tripTypeId], references: [id])
+  CorporateBooking CorporateBooking?
+
+  // ✅ New: multi-city stop support
+  stopCities City[] @relation("BookingStopCities")
+}
+
+model Quote {
+  id        Int      @id @default(autoincrement())
+  bookingId Int
+  vendorId  Int
+  amount    Float
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+  vendor  Vendor  @relation(fields: [vendorId], references: [id])
+}
+
+model CorporateBooking {
+  id                  Int      @id @default(autoincrement())
+  bookingId           Int?     @unique
+  companyName         String
+  contactPerson       String
+  contactEmail        String
+  contactPhone        String
+  numberOfVehicles    String
+  estimatedPassengers String
+  specialRequirements String?
+  budgetRange         String?
+  notes               String?
+  status              String   @default("PENDING")
+  createdAt           DateTime @default(now())
+
+  booking Booking? @relation(fields: [bookingId], references: [id])
+}
+
+model Trip {
+  id                 Int       @id @default(autoincrement())
+  bookingId          Int
+  riderId            Int
+  driverId           Int
+  vehicleId          Int
+  vendorId           Int
+  corporateBookingId Int?
+  startTime          DateTime
+  endTime            DateTime?
+  status             String    @default("ONGOING")
+  distance           Float?
+  fare               Float?
+  breakdownReported  Boolean   @default(false)
+  breakdownNotes     String?
+  createdAt          DateTime  @default(now())
+
+  booking  Booking   @relation("BookingTrip", fields: [bookingId], references: [id])
+  rider    User      @relation("UserTrips", fields: [riderId], references: [id])
+  driver   Driver    @relation(fields: [driverId], references: [id])
+  vehicle  Vehicle   @relation("VehicleTrips", fields: [vehicleId], references: [id])
+  vendor   Vendor    @relation("VendorTrips", fields: [vendorId], references: [id])
+  Feedback Feedback?
+  invoice  Invoice? // ✅ NEW: back reference from Trip to Invoice (one-to-one)
+  assistances TripAssistance[]
+
+}
+
+model Earnings {
+  id        Int      @id @default(autoincrement())
+  vendorId  Int
+  amount    Float
+  note      String?
+  createdAt DateTime @default(now())
+
+  vendor Vendor @relation("VendorEarnings", fields: [vendorId], references: [id])
+}
+
+model Feedback {
+  id       Int  @id @default(autoincrement())
+  tripId   Int  @unique
+  riderId  Int
+  driverId Int? // ✅ made optional
+
+  driverRating  Int
+  vehicleRating Int
+  serviceRating Int
+  comment       String
+  feedbackTime  DateTime? @default(now())
+
+  trip   Trip    @relation(fields: [tripId], references: [id])
+  rider  User    @relation(fields: [riderId], references: [id])
+  driver Driver? @relation(fields: [driverId], references: [id]) // ✅ optional relation
+}
+
+model Invoice {
+  id               Int      @id @default(autoincrement())
+  invoiceNumber    String   @unique
+  subtotal         Float
+  vendorCommission Float
+  adminCommission  Float
+  totalAmount      Float
+  pdfUrl           String?
+  createdAt        DateTime @default(now())
+
+  tripId   Int @unique
+  vendorId Int
+  userId   Int
+
+  trip   Trip   @relation(fields: [tripId], references: [id])
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+model TripAssistance {
+  id          Int      @id @default(autoincrement())
+  tripId      Int
+  location    String
+  subject     String
+  description String
+  reply       String?  // ✅ New field
+  messageStatus      messageStatus?  @default(UNREAD)
+  createdAt   DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@map("trip_assistances")
+}

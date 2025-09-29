@@ -1,0 +1,276 @@
+// Prisma schema for the Manpower staffing system (MySQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "mysql"
+  url               = env("DATABASE_URL")
+ 
+}
+
+/////////////////////
+// ENUMS
+/////////////////////
+
+enum RoleName {
+  maid
+  driver
+  telecaller
+  carpenter
+}
+
+enum RateUnit {
+  HOUR
+  DAY
+  FIXED
+}
+
+enum WorkOrderStatus {
+  DRAFT
+  OPEN
+  FILLED
+  PARTIAL
+  CANCELLED
+  COMPLETED
+}
+
+enum OfferStatus {
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum ShiftStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  PARTIAL
+  CANCELLED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
+/////////////////////
+// CORE ENTITIES
+/////////////////////
+
+model ClientOrg {
+  id           BigInt    @id @default(autoincrement())
+  name         String
+  gst          String?   @db.VarChar(32)
+  billingEmail String?   @db.VarChar(255)
+  creditDays   Int       @default(30)
+
+  sites        Site[]
+  workOrders   WorkOrder[]
+  invoices     Invoice[]
+
+  @@index([name])
+}
+
+model Site {
+  id      BigInt  @id @default(autoincrement())
+  orgId   BigInt
+  name    String
+  address String? @db.VarChar(500)
+  lat     Decimal? @db.Decimal(9, 6)
+  lng     Decimal? @db.Decimal(9, 6)
+
+  org      ClientOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workOrders WorkOrder[]
+
+  @@index([orgId])
+  @@index([name])
+}
+
+model Worker {
+  id        BigInt  @id @default(autoincrement())
+  userId    BigInt? @unique
+  name      String
+  phone     String  @db.VarChar(32)
+  baseRate  Decimal @db.Decimal(10, 2)
+  rateUnit  RateUnit
+  radiusKm  Int
+  rating    Decimal @db.Decimal(3, 2) @default(0.00)
+  strikes   Int     @default(0)
+
+  // relations
+  skills    WorkerSkill[]
+  langs     WorkerLanguage[]
+  offers    Offer[]
+  assignments Assignment[]
+  payouts   Payout[]
+
+  @@index([name])
+  @@index([phone])
+}
+
+model WorkerSkill {
+  workerId BigInt
+  role     RoleName
+
+  worker   Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@id([workerId, role])
+  @@index([role])
+}
+
+model WorkerLanguage {
+  workerId BigInt
+  lang     String
+
+  worker   Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@id([workerId, lang])
+  @@index([lang])
+}
+
+/////////////////////
+// WORK ORDERS FLOW
+/////////////////////
+
+model WorkOrder {
+  id            BigInt          @id @default(autoincrement())
+  orgId         BigInt
+  siteId        BigInt?
+  roleName      RoleName
+  headcount     Int
+  start         DateTime
+  durationMins  Int
+  recurringRule String?
+  budget        Decimal         @db.Decimal(10, 2)
+  status        WorkOrderStatus @default(DRAFT)
+  createdAt     DateTime        @default(now())
+
+  org          ClientOrg @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  site         Site?     @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  offers       Offer[]
+  assignments  Assignment[]
+
+  @@index([status, start])
+  @@index([orgId])
+  @@index([siteId])
+  @@index([roleName])
+}
+
+model Offer {
+  id           BigInt      @id @default(autoincrement())
+  workOrderId  BigInt
+  workerId     BigInt
+  status       OfferStatus @default(SENT)
+  expiresAt    DateTime?
+
+  workOrder    WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  worker       Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([workOrderId, status])
+  @@index([workerId])
+}
+
+model Assignment {
+  id          BigInt   @id @default(autoincrement())
+  workOrderId BigInt
+  workerId    BigInt
+  final       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  worker      Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  shifts      Shift[]
+
+  @@index([workOrderId])
+  @@index([workerId])
+}
+
+model Shift {
+  id            BigInt      @id @default(autoincrement())
+  assignmentId  BigInt
+  startPlanned  DateTime
+  endPlanned    DateTime
+  startActual   DateTime?
+  endActual     DateTime?
+  status        ShiftStatus @default(PLANNED)
+
+  assignment    Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  attendance    Attendance?
+
+  @@index([status, startPlanned])
+  @@index([assignmentId])
+}
+
+model Attendance {
+  id       BigInt   @id @default(autoincrement())
+  shiftId  BigInt   @unique
+  inLat    Decimal? @db.Decimal(9, 6)
+  inLng    Decimal? @db.Decimal(9, 6)
+  inPhoto  String?
+  outLat   Decimal? @db.Decimal(9, 6)
+  outLng   Decimal? @db.Decimal(9, 6)
+  outPhoto String?
+
+  shift    Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+}
+
+/////////////////////
+// BILLING
+/////////////////////
+
+model Invoice {
+  id         BigInt        @id @default(autoincrement())
+  orgId      BigInt
+  subtotal   Decimal       @db.Decimal(12, 2)
+  tax        Decimal       @db.Decimal(12, 2)
+  total      Decimal       @db.Decimal(12, 2)
+  status     InvoiceStatus
+  createdAt  DateTime      @default(now())
+  pdfUrl     String?
+
+  org        ClientOrg     @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  lines      InvoiceLine[]
+
+  @@index([orgId])
+  @@index([status, createdAt])
+}
+
+model InvoiceLine {
+  id         BigInt   @id @default(autoincrement())
+  invoiceId  BigInt
+  description String
+  qty        Int
+  unitPrice  Decimal  @db.Decimal(12, 2)
+  amount     Decimal  @db.Decimal(12, 2)
+
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Payout {
+  id           BigInt       @id @default(autoincrement())
+  workerId     BigInt
+  totalAmount  Decimal      @db.Decimal(12, 2)
+  status       PayoutStatus @default(PROCESSING)
+  initiatedAt  DateTime?
+  reference    String?
+  createdAt    DateTime     @default(now())
+
+  worker       Worker       @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([workerId, status])
+}
