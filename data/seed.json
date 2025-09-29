@@ -1,0 +1,171 @@
+{
+  "workers": [
+    {
+      "id": 1,
+      "userId": 101,
+      "name": "Priya Sharma",
+      "phone": "9876543210",
+      "skills": [
+        "maid"
+      ],
+      "langs": [
+        "Hindi",
+        "English"
+      ],
+      "expYears": 4,
+      "baseRate": 150,
+      "rateUnit": "HOUR",
+      "radiusKm": 10,
+      "rating": 4.8,
+      "strikes": 0
+    },
+    {
+      "id": 2,
+      "userId": 102,
+      "name": "Raj Kumar",
+      "phone": "9876543211",
+      "skills": [
+        "driver"
+      ],
+      "langs": [
+        "Hindi"
+      ],
+      "expYears": 6,
+      "baseRate": 300,
+      "rateUnit": "DAY",
+      "radiusKm": 25,
+      "rating": 4.6,
+      "strikes": 1
+    }
+  ],
+  "clientOrgs": [
+    {
+      "id": 1,
+      "name": "Tech Solutions Pvt Ltd",
+      "gst": "29ABCDE1234F1Z5",
+      "billingEmail": "billing@techsolutions.com",
+      "creditDays": 30
+    },
+    {
+      "id": 2,
+      "name": "Green Valley Apartments",
+      "billingEmail": "admin@greenvalley.com",
+      "creditDays": 15
+    }
+  ],
+  "sites": [
+    {
+      "id": 1,
+      "orgId": 1,
+      "name": "Main Office",
+      "address": "Sector 5, Noida",
+      "lat": 28.5355,
+      "lng": 77.391
+    },
+    {
+      "id": 2,
+      "orgId": 1,
+      "name": "Branch Office",
+      "address": "Connaught Place, Delhi",
+      "lat": 28.6315,
+      "lng": 77.2167
+    }
+  ],
+  "workOrders": [
+    {
+      "id": 1,
+      "orgId": 1,
+      "siteId": 1,
+      "roleName": "maid",
+      "headcount": 1,
+      "start": "2025-09-23T09:00:00.000Z",
+      "durationMins": 480,
+      "budget": 1200,
+      "status": "OPEN"
+    },
+    {
+      "id": 2,
+      "orgId": 1,
+      "siteId": 2,
+      "roleName": "driver",
+      "headcount": 1,
+      "start": "2025-09-23T08:00:00.000Z",
+      "durationMins": 600,
+      "budget": 3000,
+      "status": "FILLED"
+    }
+  ],
+  "offers": [
+    {
+      "id": 1,
+      "workOrderId": 1,
+      "workerId": 1,
+      "status": "SENT",
+      "expiresAt": "2025-09-23T10:00:00.000Z"
+    }
+  ],
+  "assignments": [
+    {
+      "id": 1,
+      "workOrderId": 2,
+      "workerId": 2,
+      "final": true,
+      "createdAt": "2025-09-22T08:00:00.000Z"
+    }
+  ],
+  "shifts": [
+    {
+      "id": 1,
+      "assignmentId": 1,
+      "startPlanned": "2025-09-23T08:00:00.000Z",
+      "endPlanned": "2025-09-23T18:00:00.000Z",
+      "startActual": "2025-09-23T08:10:00.000Z",
+      "endActual": "2025-09-23T18:05:00.000Z",
+      "status": "COMPLETED"
+    }
+  ],
+  "attendance": [
+    {
+      "id": 1,
+      "shiftId": 1,
+      "inLat": 28.6315,
+      "inLng": 77.2167,
+      "inPhoto": "checkin.jpg",
+      "outLat": 28.6315,
+      "outLng": 77.2167,
+      "outPhoto": "checkout.jpg"
+    }
+  ],
+  "invoices": [
+    {
+      "id": 1,
+      "orgId": 1,
+      "subtotal": 1200,
+      "tax": 216,
+      "total": 1416,
+      "status": "PAID",
+      "createdAt": "2025-09-21T09:00:00.000Z"
+    }
+  ],
+  "invoiceLines": [
+    {
+      "id": 1,
+      "invoiceId": 1,
+      "description": "Maid - 8 hours",
+      "qty": 1,
+      "unitPrice": 1200,
+      "amount": 1200
+    }
+  ],
+  "payouts": [
+    {
+      "id": 1,
+      "workerId": 2,
+      "totalAmount": 2600,
+      "status": "PAID",
+      "initiatedAt": "2025-09-21T12:00:00.000Z",
+      "reference": "PAYOUT-001",
+      "createdAt": "2025-09-21T12:00:00.000Z"
+    }
+  ]
+}
