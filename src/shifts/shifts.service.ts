@@ -1,23 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { DbService } from '../common/db.service';
-
+import { PrismaService } from '../prisma.service';
 @Injectable()
 export class ShiftsService {
-  constructor(private db: DbService) {}
-  list() { return this.db.list('shifts'); }
-  create(assignmentId:number, start:string, end:string) { return this.db.create('shifts', { assignmentId, startPlanned:start, endPlanned:end, status:'PLANNED' }); }
-  checkin(shiftId:number, lat:number, lng:number, photoUrl?:string) {
-    this.db.update('shifts', shiftId, { startActual: new Date().toISOString(), status:'IN_PROGRESS' });
-    const att = (this.db.list('attendance') as any[]).find(a=> a.shiftId === shiftId);
-    if (att) this.db.update('attendance', att.id, { inLat:lat, inLng:lng, inPhoto:photoUrl });
-    else this.db.create('attendance', { shiftId, inLat:lat, inLng:lng, inPhoto:photoUrl });
+  constructor(private prisma: PrismaService) {}
+  list() { return this.prisma.shift.findMany(); }
+  create(assignmentId:number, start:Date, end:Date) { return this.prisma.shift.create({ data: { assignmentId, startPlanned: start, endPlanned: end, status: 'PLANNED' } }); }
+  async checkin(shiftId:number, lat:number, lng:number, photoUrl?:string) {
+    await this.prisma.shift.update({ where: { id: shiftId }, data: { startActual: new Date(), status: 'IN_PROGRESS' } });
+    const att = await this.prisma.attendance.findUnique({ where: { shiftId } });
+    if (att) await this.prisma.attendance.update({ where: { shiftId }, data: { inLat: lat, inLng: lng, inPhoto: photoUrl } });
+    else await this.prisma.attendance.create({ data: { shiftId, inLat: lat, inLng: lng, inPhoto: photoUrl } });
     return { ok:true };
   }
-  checkout(shiftId:number, lat:number, lng:number, photoUrl?:string) {
-    this.db.update('shifts', shiftId, { endActual: new Date().toISOString(), status:'COMPLETED' });
-    const att = (this.db.list('attendance') as any[]).find(a=> a.shiftId === shiftId);
-    if (att) this.db.update('attendance', att.id, { outLat:lat, outLng:lng, outPhoto:photoUrl });
-    else this.db.create('attendance', { shiftId, outLat:lat, outLng:lng, outPhoto:photoUrl });
+  async checkout(shiftId:number, lat:number, lng:number, photoUrl?:string) {
+    await this.prisma.shift.update({ where: { id: shiftId }, data: { endActual: new Date(), status: 'COMPLETED' } });
+    const att = await this.prisma.attendance.findUnique({ where: { shiftId } });
+    if (att) await this.prisma.attendance.update({ where: { shiftId }, data: { outLat: lat, outLng: lng, outPhoto: photoUrl } });
+    else await this.prisma.attendance.create({ data: { shiftId, outLat: lat, outLng: lng, outPhoto: photoUrl } });
     return { ok:true };
   }
 }

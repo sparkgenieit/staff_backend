@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ShiftsController } from './shifts.controller';
 import { ShiftsService } from './shifts.service';
-import { CommonModule } from '../common/common.module';
-
-@Module({ imports:[CommonModule], controllers:[ShiftsController], providers:[ShiftsService] })
+import { PrismaService } from '../prisma.service';
+@Module({
+  controllers: [ShiftsController],
+  providers: [PrismaService, ShiftsService],
+})
 export class ShiftsModule {}

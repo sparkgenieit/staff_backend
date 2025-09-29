@@ -1,20 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { DbService } from '../common/db.service';
-import type { WorkOrder } from '../types';
-
+import { PrismaService } from '../prisma.service';
 @Injectable()
 export class WorkordersService {
-  constructor(private db: DbService) {}
-  list() { return this.db.list('workOrders'); }
-  open() { return this.db.list('workOrders').filter((w:any)=> ['OPEN','PARTIAL'].includes(w.status)); }
-  create(body: Omit<WorkOrder,'id'>) { return this.db.create('workOrders', body); }
-  update(id:number, patch: Partial<WorkOrder>) { return this.db.update('workOrders', id, patch); }
-  filled(id:number) { return this.db.update('workOrders', id, { status: 'FILLED' }); }
-  duplicate(id:number) {
-    const src:any = this.db.get('workOrders', id);
+  constructor(private prisma: PrismaService) {}
+  list() { return this.prisma.workOrder.findMany(); }
+  open() { return this.prisma.workOrder.findMany({ where: { status: { in: ['OPEN','PARTIAL'] } } }); }
+  create(body:any) { return this.prisma.workOrder.create({ data: body }); }
+  update(id:number, body:any) { return this.prisma.workOrder.update({ where: { id }, data: body }); }
+  filled(id:number) { return this.prisma.workOrder.update({ where: { id }, data: { status: 'FILLED' } }); }
+  async duplicate(id:number) {
+    const src:any = await this.prisma.workOrder.findUnique({ where: { id } });
     if (!src) return null;
-    const copy = { ...src, id: undefined, start: new Date().toISOString() };
-    return this.db.create('workOrders', copy);
+    const { id:_, createdAt, ...rest } = src;
+    return this.prisma.workOrder.create({ data: { ...rest, start: new Date() } });
   }
-  remove(id:number) { return this.db.remove('workOrders', id); }
+  remove(id:number) { return this.prisma.workOrder.delete({ where: { id } }); }
 }
