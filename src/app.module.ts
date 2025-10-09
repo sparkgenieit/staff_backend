@@ -8,8 +8,9 @@ import { OffersModule } from './offers/offers.module';
 import { MatchingModule } from './matching/matching.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { BillingModule } from './billing/billing.module';
+import { AssignmentsModule } from './assignments/assignments.module';
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), WorkersModule, ClientsModule, WorkordersModule, OffersModule, MatchingModule, ShiftsModule, BillingModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), WorkersModule, AssignmentsModule, ClientsModule, WorkordersModule, OffersModule, MatchingModule, ShiftsModule, BillingModule],
   providers: [PrismaService],
   exports: [PrismaService],
 })
