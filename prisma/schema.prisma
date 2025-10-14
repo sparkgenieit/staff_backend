@@ -5,9 +5,8 @@ generator client {
 }
 
 datasource db {
-  provider          = "mysql"
-  url               = env("DATABASE_URL")
- 
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 /////////////////////
@@ -19,6 +18,13 @@ enum RoleName {
   driver
   telecaller
   carpenter
+}
+
+// 🔐 App-level roles (similar to doTrip)
+enum UserRole {
+  ADMIN
+  STAFF
+  CLIENT
 }
 
 enum RateUnit {
@@ -67,6 +73,31 @@ enum PayoutStatus {
 }
 
 /////////////////////
+// AUTH ENTITIES
+/////////////////////
+
+// 🔐 Users (mirrors doTrip-style fields; phone or email may be null individually, but at least one should be set at app level)
+model User {
+  id             BigInt    @id @default(autoincrement())
+  email          String?   @unique @db.VarChar(255)
+  phone          String?   @unique @db.VarChar(32)
+  name           String?
+  passwordHash   String?   @db.VarChar(255)
+  role           UserRole  @default(STAFF)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  lastLoginAt    DateTime?
+
+  // doTrip-style token storage
+  accessToken    String?   @db.Text
+  tokenExpiresAt DateTime?
+
+  worker         Worker?
+
+  @@index([role, isActive])
+}
+
+/////////////////////
 // CORE ENTITIES
 /////////////////////
 
@@ -88,11 +119,11 @@ model Site {
   id      BigInt  @id @default(autoincrement())
   orgId   BigInt
   name    String
-  address String? @db.VarChar(500)
+  address String?  @db.VarChar(500)
   lat     Decimal? @db.Decimal(9, 6)
   lng     Decimal? @db.Decimal(9, 6)
 
-  org      ClientOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org       ClientOrg @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workOrders WorkOrder[]
 
   @@index([orgId])
@@ -107,15 +138,17 @@ model Worker {
   baseRate  Decimal @db.Decimal(10, 2)
   rateUnit  RateUnit
   radiusKm  Int
+  expYears  Int?    @default(0)
   rating    Decimal @db.Decimal(3, 2) @default(0.00)
   strikes   Int     @default(0)
 
   // relations
-  skills    WorkerSkill[]
-  langs     WorkerLanguage[]
-  offers    Offer[]
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  skills      WorkerSkill[]
+  langs       WorkerLanguage[]
+  offers      Offer[]
   assignments Assignment[]
-  payouts   Payout[]
+  payouts     Payout[]
 
   @@index([name])
   @@index([phone])

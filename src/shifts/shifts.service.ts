@@ -184,4 +184,25 @@ export class ShiftsService {
       });
     }
   }
+
+    async listForLoggedInWorker(userId: bigint | number) {
+    const worker = await this.prisma.worker.findFirst({
+      where: { userId: BigInt(userId) },
+      select: { id: true },
+    });
+    if (!worker) return [];
+
+    return this.prisma.shift.findMany({
+      where: { assignment: { workerId: worker.id } },
+      orderBy: { startPlanned: 'asc' },
+      include: {
+        assignment: {
+          include: {
+            workOrder: true, // useful context for UI
+          },
+        },
+        attendance: true,
+      },
+    });
+  }
 }

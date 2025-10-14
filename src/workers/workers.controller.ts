@@ -1,12 +1,34 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
 import { WorkersService } from './workers.service';
+import { CreateWorkerDto } from './dto/create-worker.dto';
+import { UpdateWorkerDto } from './dto/update-worker.dto';
 
 @Controller('workers')
 export class WorkersController {
-  constructor(private readonly svc: WorkersService) {}
-  @Get() list() { return this.svc.list(); }
-  @Get(':id') get(@Param('id') id: string) { return this.svc.get(+id); }
-  @Post() create(@Body() body: any) { return this.svc.create(body); }
-  @Put(':id') update(@Param('id') id: string, @Body() body: any) { return this.svc.update(+id, body); }
-  @Delete(':id') remove(@Param('id') id: string) { return this.svc.remove(+id); }
+  constructor(private readonly service: WorkersService) {}
+
+  @Post()
+  create(@Body() body: CreateWorkerDto) {
+    return this.service.create(body);
+  }
+
+  @Get()
+  findAll() {
+    return this.service.findAll();
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(BigInt(id));
+  }
+
+  @Put(':id')
+  update(@Param('id') id: string, @Body() body: UpdateWorkerDto) {
+    return this.service.update(BigInt(id), body);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.service.remove(BigInt(id));
+  }
 }

@@ -1,165 +1,130 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { Prisma } from '@prisma/client';
+
+const toMoneyString = (v: unknown): string => {
+  if (v === null || v === undefined || v === '') return '0.00';
+  if (typeof v === 'number' && Number.isFinite(v)) return v.toFixed(2);
+  const n = Number(v as any);
+  return Number.isFinite(n) ? n.toFixed(2) : String(v);
+};
+
+type RoleName = 'maid' | 'driver' | 'telecaller' | 'carpenter';
+
+type WorkOrderStatus = 'DRAFT' | 'OPEN' | 'FILLED' | 'PARTIAL' | 'CANCELLED' | 'COMPLETED';
+
+type CreateInput = {
+  orgId: number;
+  siteId?: number;
+  roleName: 'maid'|'driver'|'telecaller'|'carpenter';
+  headcount: number;
+  start: string | Date;
+  durationMins: number;
+  recurringRule?: string;
+  budget: string | number;
+  status?: WorkOrderStatus; // NEW
+};
+
+type UpdateInput = Partial<CreateInput>;
 
 @Injectable()
 export class WorkordersService {
   constructor(private prisma: PrismaService) {}
 
-  list() {
-    return this.prisma.workOrder.findMany();
-  }
+  /**
+   * Create a work order. If siteId is provided, we align orgId to the site's org.
+   * This avoids "siteId does not belong to the given orgId" errors in the UI.
+   */
+  async create(data: CreateInput) {
+    let orgId = Number(data.orgId);
+    let siteId = data.siteId ? Number(data.siteId) : undefined;
 
-  open() {
-    return this.prisma.workOrder.findMany({
-      where: { status: { in: ['OPEN', 'PARTIAL'] } },
-    });
-  }
+    if (!orgId && !siteId) {
+      throw new BadRequestException('orgId is required when siteId is not provided');
+    }
 
-  async create(body: any) {
-    const data = await this.sanitizeAndValidate(body);
-    return this.prisma.workOrder.create({ data });
-  }
-
-  async update(id: number, body: any) {
-    const data = await this.sanitizeAndValidate(body, /*isUpdate*/ true);
-    try {
-      return await this.prisma.workOrder.update({
-        where: { id: Number(id) },
-        data,
+    if (siteId) {
+      const site = await this.prisma.site.findUnique({
+        where: { id: BigInt(siteId) },
+        select: { id: true, orgId: true },
       });
-    } catch (err: any) {
-      // Prisma P2003 = FK constraint failed
-      if (err?.code === 'P2003') {
-        throw new BadRequestException('Foreign key constraint violated (siteId/orgId).');
-      }
-      throw err;
-    }
-  }
-
-  async remove(id: number) {
-    return this.prisma.workOrder.delete({ where: { id: Number(id) } });
-  }
-
-  /** Mark a work order as FILLED (for PATCH /work-orders/:id/filled). */
-  async filled(id: number) {
-    return this.prisma.workOrder.update({
-      where: { id: Number(id) },
-      data: { status: 'FILLED' },
-    });
-  }
-
-  /** Duplicate a work order (for POST /work-orders/:id/duplicate). */
-  async duplicate(id: number) {
-    const src = await this.prisma.workOrder.findUnique({
-      where: { id: Number(id) },
-    });
-    if (!src) {
-      throw new NotFoundException('Work order not found');
+      if (!site) throw new NotFoundException('siteId not found');
+      // auto-align org to the site's org
+      orgId = Number(site.orgId);
     }
 
-    // Omit PK and audit fields if present
-    const {
-      id: _omitId,
-      createdAt: _omitCreatedAt,
-      updatedAt: _omitUpdatedAt,
-      ...rest
-    } = src as any;
-
-    // Create a copy; default status to DRAFT
-    return this.prisma.workOrder.create({
+    const created = await this.prisma.workOrder.create({
       data: {
-        ...rest,
-        status: 'DRAFT',
-      } as Prisma.WorkOrderUncheckedCreateInput,
+        orgId: BigInt(orgId),
+        siteId: siteId ? BigInt(siteId) : undefined,
+        roleName: data.roleName,
+        headcount: data.headcount,
+        start: new Date(data.start),
+        durationMins: data.durationMins,
+        recurringRule: data.recurringRule ?? null,
+        budget: toMoneyString(data.budget) as any,
+        ...(data.status ? { status: data.status } : {}),
+      },
     });
+    return created;
+  }
+
+  async findAll() {
+    return this.prisma.workOrder.findMany({
+      orderBy: [{ createdAt: 'desc' }],
+    });
+  }
+
+  async findOne(id: bigint) {
+    const record = await this.prisma.workOrder.findUnique({
+      where: { id },
+    });
+    if (!record) throw new NotFoundException('Work order not found');
+    return record;
   }
 
   /**
-   * Coerce/clean incoming body:
-   * - orgId: number
-   * - siteId: number | null (set null if not provided/invalid)
-   * - start: Date
-   * - roleName/status: as-is (trusted from frontend enum)
-   * - durationMins/headcount/budget: number
-   * Also verifies that site exists (if provided) and (optionally) belongs to org.
+   * Update a work order. If siteId is changed/present, align orgId to the site's org.
+   * If siteId is removed (set undefined), keep existing orgId unless caller sends a new orgId.
    */
-  private async sanitizeAndValidate(body: any, isUpdate = false): Promise<Prisma.WorkOrderUncheckedCreateInput> {
-    const {
-      orgId,
-      siteId,
-      start,
-      roleName,
-      durationMins,
-      headcount,
-      budget,
-      recurringRule,
-      status,
-      ...rest
-    } = body ?? {};
+  async update(id: bigint, data: UpdateInput) {
+    const existing = await this.prisma.workOrder.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Work order not found');
 
-    const data: any = { ...rest };
+    let nextOrgId: number | undefined =
+      data.orgId !== undefined ? Number(data.orgId) : Number(existing.orgId);
+    let nextSiteId: number | undefined =
+      data.siteId !== undefined ? (data.siteId === null ? undefined : Number(data.siteId)) : (existing.siteId ? Number(existing.siteId) : undefined);
 
-    // orgId
-    if (orgId !== undefined) {
-      const orgNum = Number(orgId);
-      if (!Number.isFinite(orgNum) || orgNum <= 0) throw new BadRequestException('Invalid orgId');
-      data.orgId = orgNum;
-    } else if (!isUpdate) {
-      throw new BadRequestException('orgId is required');
+    // If a site is (still) present, prefer aligning orgId to site's org
+    if (nextSiteId) {
+      const site = await this.prisma.site.findUnique({
+        where: { id: BigInt(nextSiteId) },
+        select: { id: true, orgId: true },
+      });
+      if (!site) throw new NotFoundException('siteId not found');
+      nextOrgId = Number(site.orgId);
+    } else if (!nextOrgId) {
+      throw new BadRequestException('orgId is required when siteId is not provided');
     }
 
-    // siteId -> number or null
-    if (siteId === undefined || siteId === null || siteId === '' || siteId === 'none') {
-      data.siteId = null;
-    } else {
-      const sid = Number(siteId);
-      if (Number.isFinite(sid) && sid > 0) {
-        // verify site exists
-        const site = await this.prisma.site.findUnique({ where: { id: sid } });
-        if (!site) throw new BadRequestException('siteId does not exist');
-        // (optional) verify site belongs to orgId when both present
-        if (data.orgId !== undefined && site.orgId !== data.orgId) {
-          throw new BadRequestException('siteId does not belong to the given orgId');
-        }
-        data.siteId = sid;
-      } else {
-        data.siteId = null;
-      }
-    }
+    const updated = await this.prisma.workOrder.update({
+      where: { id },
+      data: {
+        orgId: BigInt(nextOrgId!),
+        siteId: nextSiteId ? BigInt(nextSiteId) : null,
+        ...(data.roleName !== undefined ? { roleName: data.roleName } : {}),
+        ...(data.headcount !== undefined ? { headcount: data.headcount } : {}),
+        ...(data.start !== undefined ? { start: new Date(data.start) } : {}),
+        ...(data.durationMins !== undefined ? { durationMins: data.durationMins } : {}),
+        ...(data.recurringRule !== undefined ? { recurringRule: data.recurringRule ?? null } : {}),
+        ...(data.budget !== undefined ? { budget: toMoneyString(data.budget) as any } : {}),
+        ...(data.status !== undefined ? { status: data.status } : {}),
+      },
+    });
+    return updated;
+  }
 
-    // start -> Date
-    if (start !== undefined) {
-      const iso = String(start);
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) throw new BadRequestException('Invalid start datetime');
-      data.start = d;
-    } else if (!isUpdate) {
-      throw new BadRequestException('start is required');
-    }
-
-    // numbers
-    if (durationMins !== undefined) {
-      const n = Number(durationMins);
-      if (!Number.isFinite(n) || n < 30) throw new BadRequestException('durationMins must be >= 30');
-      data.durationMins = n;
-    }
-    if (headcount !== undefined) {
-      const n = Number(headcount);
-      if (!Number.isFinite(n) || n < 1) throw new BadRequestException('headcount must be >= 1');
-      data.headcount = n;
-    }
-    if (budget !== undefined) {
-      const n = Number(budget);
-      if (!Number.isFinite(n) || n < 0) throw new BadRequestException('budget must be >= 0');
-      data.budget = n;
-    }
-
-    // strings/enums
-    if (roleName !== undefined) data.roleName = String(roleName);
-    if (recurringRule !== undefined) data.recurringRule = String(recurringRule);
-    if (status !== undefined) data.status = String(status);
-
-    return data as Prisma.WorkOrderUncheckedCreateInput;
+  async remove(id: bigint) {
+    return this.prisma.workOrder.delete({ where: { id } });
   }
 }

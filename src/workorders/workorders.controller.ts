@@ -1,42 +1,34 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, ParseIntPipe } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { WorkordersService } from './workorders.service';
+import { CreateWorkOrderDto } from './dto/create-workorder.dto';
+import { UpdateWorkOrderDto } from './dto/update-workorder.dto';
 
 @Controller('work-orders')
 export class WorkordersController {
-  constructor(private readonly svc: WorkordersService) {}
-
-  @Get()
-  list() {
-    return this.svc.list();
-  }
-
-  @Get('open')
-  open() {
-    return this.svc.open();
-  }
+  constructor(private readonly service: WorkordersService) {}
 
   @Post()
-  create(@Body() body: any) {
-    return this.svc.create(body);
+  create(@Body() body: CreateWorkOrderDto) {
+    return this.service.create(body);
+  }
+
+  @Get()
+  findAll() {
+    return this.service.findAll();
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(BigInt(id));
   }
 
   @Put(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
-    return this.svc.update(id, body);
-  }
-
-  @Patch(':id/filled')
-  filled(@Param('id', ParseIntPipe) id: number) {
-    return this.svc.filled(id);
-  }
-
-  @Post(':id/duplicate')
-  duplicate(@Param('id', ParseIntPipe) id: number) {
-    return this.svc.duplicate(id);
+  update(@Param('id') id: string, @Body() body: UpdateWorkOrderDto) {
+    return this.service.update(BigInt(id), body);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.svc.remove(id);
+  remove(@Param('id') id: string) {
+    return this.service.remove(BigInt(id));
   }
 }

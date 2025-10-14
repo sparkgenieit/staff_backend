@@ -144,4 +144,74 @@ export class OffersService {
   async remove(id: number) {
     return this.prisma.offer.delete({ where: { id } });
   }
+
+   /**
+   * Worker-scoped: list offers for the logged-in user (via linked Worker).
+   * Safe for staff app; does not affect admin endpoints.
+   */
+  async listForLoggedInWorker(userId: bigint | number) {
+    const worker = await this.prisma.worker.findFirst({
+      where: { userId: BigInt(userId) },
+      select: { id: true },
+    });
+    if (!worker) return [];
+    return this.prisma.offer.findMany({
+      where: { workerId: worker.id },
+      orderBy: { id: 'desc' },
+      include: {
+        workOrder: true, // handy for UI
+      },
+    });
+  }
+
+  /**
+   * Worker-scoped: accept an offer that belongs to the logged-in user.
+   * Reuses the existing admin `accept()` logic after ownership check.
+   */
+  async acceptForLoggedInWorker(offerId: bigint | number, userId: bigint | number) {
+    const worker = await this.prisma.worker.findFirst({
+      where: { userId: BigInt(userId) },
+      select: { id: true },
+    });
+    if (!worker) {
+      throw new BadRequestException('Worker profile not found for this user');
+    }
+
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: Number(offerId) },
+      select: { id: true, workerId: true },
+    });
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (Number(offer.workerId) !== Number(worker.id)) {
+      throw new BadRequestException('Not your offer');
+    }
+
+    // Delegate to existing flow (creates assignment/shift etc.)
+    return this.accept(Number(offerId));
+  }
+
+  /**
+   * Worker-scoped: reject an offer that belongs to the logged-in user.
+   * Reuses the existing admin `reject()` logic after ownership check.
+   */
+  async rejectForLoggedInWorker(offerId: bigint | number, userId: bigint | number) {
+    const worker = await this.prisma.worker.findFirst({
+      where: { userId: BigInt(userId) },
+      select: { id: true },
+    });
+    if (!worker) {
+      throw new BadRequestException('Worker profile not found for this user');
+    }
+
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: Number(offerId) },
+      select: { id: true, workerId: true },
+    });
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (Number(offer.workerId) !== Number(worker.id)) {
+      throw new BadRequestException('Not your offer');
+    }
+
+    return this.reject(Number(offerId));
+  }
 }
