@@ -1,6 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ShiftStatus } from '@prisma/client';
+
+function toBigIntId(id: string | number | bigint): bigint {
+  try {
+    return BigInt(String(id));
+  } catch {
+    throw new BadRequestException('Invalid id format');
+  }
+}
 
 @Injectable()
 export class ShiftsService {
@@ -16,35 +28,32 @@ export class ShiftsService {
   /**
    * Mark a shift as started (IN_PROGRESS), set startActual, and create/update Attendance with inLat/inLng.
    */
-  async checkIn(shiftId: number, lat?: number, lng?: number) {
-    if (!Number.isFinite(shiftId)) {
-      throw new BadRequestException('Invalid shift id');
-    }
+  async checkIn(shiftId: string | number | bigint, lat?: number, lng?: number) {
+    const sid = toBigIntId(shiftId);
 
-    const shift = await this.prisma.shift.findUnique({ where: { id: shiftId } });
+    const shift = await this.prisma.shift.findUnique({ where: { id: sid } });
     if (!shift) throw new NotFoundException('Shift not found');
 
     // If already started, just return current record
     if (shift.status === ShiftStatus.IN_PROGRESS || shift.startActual) {
-      // Ensure attendance has inbound coords if provided
       if (lat != null && lng != null) {
-        await this.ensureAttendanceIn(shiftId, lat, lng);
+        await this.ensureAttendanceIn(sid, lat, lng);
       }
-      return this.prisma.shift.findUnique({ where: { id: shiftId } });
+      return this.prisma.shift.findUnique({ where: { id: sid } });
     }
 
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.shift.update({
-        where: { id: shiftId },
+        where: { id: sid },
         data: {
           status: ShiftStatus.IN_PROGRESS,
           startActual: now,
         },
       });
 
-      await this.ensureAttendanceInWithTx(tx, shiftId, lat, lng);
+      await this.ensureAttendanceInWithTx(tx, sid, lat, lng);
 
       return updated;
     });
@@ -52,38 +61,37 @@ export class ShiftsService {
 
   /**
    * Mark a shift as completed, set endActual, and update Attendance with outLat/outLng.
-   * If the shift was never checked in, we’ll still allow completion (sets IN_PROGRESS -> COMPLETED).
    */
-  async checkOut(shiftId: number, lat?: number, lng?: number) {
-    if (!Number.isFinite(shiftId)) {
-      throw new BadRequestException('Invalid shift id');
-    }
+  async checkOut(
+    shiftId: string | number | bigint,
+    lat?: number,
+    lng?: number,
+  ) {
+    const sid = toBigIntId(shiftId);
 
-    const shift = await this.prisma.shift.findUnique({ where: { id: shiftId } });
+    const shift = await this.prisma.shift.findUnique({ where: { id: sid } });
     if (!shift) throw new NotFoundException('Shift not found');
 
     // If already completed, just patch attendance out coords if provided
     if (shift.status === ShiftStatus.COMPLETED && shift.endActual) {
       if (lat != null && lng != null) {
-        await this.patchAttendanceOut(shiftId, lat, lng);
+        await this.patchAttendanceOut(sid, lat, lng);
       }
-      return this.prisma.shift.findUnique({ where: { id: shiftId } });
+      return this.prisma.shift.findUnique({ where: { id: sid } });
     }
 
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.shift.update({
-        where: { id: shiftId },
+        where: { id: sid },
         data: {
           status: ShiftStatus.COMPLETED,
           endActual: now,
-          // If someone tries to complete directly from PLANNED, we still allow it
-          // and keep/leave startActual as-is.
         },
       });
 
-      await this.patchAttendanceOutWithTx(tx, shiftId, lat, lng);
+      await this.patchAttendanceOutWithTx(tx, sid, lat, lng);
 
       return updated;
     });
@@ -91,7 +99,11 @@ export class ShiftsService {
 
   // ---- helpers ----
 
-  private async ensureAttendanceIn(shiftId: number, lat?: number, lng?: number) {
+  private async ensureAttendanceIn(
+    shiftId: bigint,
+    lat?: number,
+    lng?: number,
+  ) {
     const att = await this.prisma.attendance.findUnique({ where: { shiftId } });
     if (!att) {
       await this.prisma.attendance.create({
@@ -101,7 +113,11 @@ export class ShiftsService {
           inLng: lng != null ? String(lng) : null,
         },
       });
-    } else if (lat != null && lng != null && (att.inLat == null || att.inLng == null)) {
+    } else if (
+      lat != null &&
+      lng != null &&
+      (att.inLat == null || att.inLng == null)
+    ) {
       await this.prisma.attendance.update({
         where: { shiftId },
         data: {
@@ -113,8 +129,8 @@ export class ShiftsService {
   }
 
   private async ensureAttendanceInWithTx(
-    tx: PrismaService['$transaction'] extends (...args: any) => infer R ? any : never,
-    shiftId: number,
+    tx: Parameters<PrismaService['$transaction']>[0] extends infer _T ? any : never,
+    shiftId: bigint,
     lat?: number,
     lng?: number,
   ) {
@@ -127,7 +143,11 @@ export class ShiftsService {
           inLng: lng != null ? String(lng) : null,
         },
       });
-    } else if (lat != null && lng != null && (att.inLat == null || att.inLng == null)) {
+    } else if (
+      lat != null &&
+      lng != null &&
+      (att.inLat == null || att.inLng == null)
+    ) {
       await tx.attendance.update({
         where: { shiftId },
         data: {
@@ -138,7 +158,11 @@ export class ShiftsService {
     }
   }
 
-  private async patchAttendanceOut(shiftId: number, lat?: number, lng?: number) {
+  private async patchAttendanceOut(
+    shiftId: bigint,
+    lat?: number,
+    lng?: number,
+  ) {
     const att = await this.prisma.attendance.findUnique({ where: { shiftId } });
     if (!att) {
       await this.prisma.attendance.create({
@@ -160,8 +184,8 @@ export class ShiftsService {
   }
 
   private async patchAttendanceOutWithTx(
-    tx: PrismaService['$transaction'] extends (...args: any) => infer R ? any : never,
-    shiftId: number,
+    tx: Parameters<PrismaService['$transaction']>[0] extends infer _T ? any : never,
+    shiftId: bigint,
     lat?: number,
     lng?: number,
   ) {
@@ -185,24 +209,46 @@ export class ShiftsService {
     }
   }
 
-    async listForLoggedInWorker(userId: bigint | number) {
+  /**
+   * Worker-scoped list. Coerce id safely; attach `site` from `assignment.workOrder.site`
+   * so the frontend can continue to use `shift.site?.name`.
+   */
+  async listForLoggedInWorker(userId: string | number | bigint) {
+    const uid = toBigIntId(userId);
+
     const worker = await this.prisma.worker.findFirst({
-      where: { userId: BigInt(userId) },
+      where: { userId: uid },
       select: { id: true },
     });
     if (!worker) return [];
 
-    return this.prisma.shift.findMany({
+    const shifts = await this.prisma.shift.findMany({
       where: { assignment: { workerId: worker.id } },
       orderBy: { startPlanned: 'asc' },
       include: {
         assignment: {
           include: {
-            workOrder: true, // useful context for UI
+            workOrder: {
+              include: {
+                site: true, // <-- get site via workOrder
+              },
+            },
           },
         },
         attendance: true,
+        // NOTE: do not include `site: true` here; Shift has no direct `site` relation
       },
     });
+
+    // Attach a top-level `site` so UI can keep using `shift.site?.name`
+    const withSite = shifts.map((s: any) => ({
+      ...s,
+      site: s?.assignment?.workOrder?.site ?? null,
+    }));
+
+    // Optionally strip the heavy nesting if you want a leaner payload:
+    // return withSite.map(({ assignment, ...rest }) => rest);
+
+    return withSite;
   }
 }

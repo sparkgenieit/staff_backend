@@ -1,3 +1,4 @@
+// src/auth/auth.service.ts
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
@@ -14,11 +15,23 @@ export class AuthService {
   private async issueAndPersist(userId: bigint) {
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, role: true, phone: true, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        phone: true,
+        isActive: true,
+      },
     });
-    if (!u || !u.isActive) throw new UnauthorizedException('User not found or inactive');
 
+    if (!u || !u.isActive) {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    // IMPORTANT: include both `userId` and `sub` so downstream code can rely on either.
     const payload = {
+      userId: Number(u.id),
       sub: Number(u.id),
       email: u.email || '',
       name: u.name || '',
@@ -31,10 +44,24 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: u.id },
-      data: { accessToken, tokenExpiresAt: null, lastLoginAt: new Date() },
+      data: {
+        accessToken,
+        tokenExpiresAt: null,
+        lastLoginAt: new Date(),
+      },
     });
 
-    return { accessToken, user: payload };
+    // Return minimal safe user shape alongside token
+    return {
+      accessToken,
+      user: {
+        id: Number(u.id),
+        email: u.email || '',
+        name: u.name || '',
+        role: u.role as AppRole,
+        phone: u.phone || '',
+      },
+    };
   }
 
   async issueForPhone(phone: string) {
